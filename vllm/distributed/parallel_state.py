@@ -25,6 +25,7 @@ If you only need to use the distributed environment without model/pipeline
 
 import contextlib
 import gc
+import os
 import pickle
 import weakref
 from collections import namedtuple
@@ -1436,6 +1437,19 @@ def init_distributed_environment(
             rank=rank,
             timeout=timeout,
         )
+        # Barrier with optional delay after init to let nccl-mesh-plugin
+        # finish RDMA setup before NCCL communicator creation
+        import logging
+        _log = logging.getLogger("vllm.distributed")
+        torch.distributed.barrier()
+        _delay = float(os.environ.get("VLLM_NCCL_INIT_DELAY", "0.0"))
+        if _delay > 0:
+            _log.info(
+                "VLLM_NCCL_INIT_DELAY=%.2fs: waiting after init for mesh plugin",
+                _delay,
+            )
+            import time
+            time.sleep(_delay)
         if enable_elastic_ep:
             tp_pp_cpu_group = torch.distributed.new_group(
                 backend="gloo", timeout=timeout
